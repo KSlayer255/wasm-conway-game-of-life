@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Conway's Game of Life</title>
+    <style>
+      body {
+        margin: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background: #111;
+      }
+      canvas {
+        width: 1000px;
+        height: 1000px;
+        border: 1px solid #333;
+        image-rendering: pixelated;
+      }
+      /* HUD overlay - positioned absolutely over the canvas */
+      #hud {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        color: #0f0;
+        font-family: monospace;
+        font-size: 14px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 8px 12px;
+        border-radius: 4px;
+        pointer-events: none; /* so clicks pass through to canvas */
+        user-select: none;
+      }
+      #controls {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        color: #0f0;
+        font-family: monospace;
+        font-size: 14px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 8px 12px;
+        border-radius: 4px;
+        pointer-events: none; /* so clicks pass through to canvas */
+        user-select: none;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- The HUD element -->
+    <div id="hud">Camera: (0, 0) | Cells: 0</div>
+    <div id="controls">
+      <h3>Controls</h3>
+      <strong>Up:</strong> ArrowUp, k, w<br />
+      <strong>Down:</strong> ArrowDown, j, s<br />
+      <strong>Right:</strong> ArrowRight, l, d<br />
+      <strong>Left:</strong> ArrowLeft, a, h<br />
+      <strong>Zoom In:</strong> z<br />
+      <strong>Zoom Out:</strong> x
+    </div>
+    <canvas id="canvas" width="256" height="256"></canvas>
+  </body>
+</html>
