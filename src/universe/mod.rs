@@ -5,7 +5,7 @@ pub type Cell = (i32, i32);
 
 pub trait Universe {
     fn tick(&mut self);
-    fn live_cells(&self) -> &std::collections::HashSet<Cell>;
+    fn live_cells(&self) -> &rustc_hash::FxHashSet<Cell>;
     fn camera_x(&self) -> i32;
     fn camera_y(&self) -> i32;
     fn pan(&mut self, dx: i32, dy: i32);

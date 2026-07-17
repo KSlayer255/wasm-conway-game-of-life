@@ -1,7 +1,7 @@
 use crate::universe::Cell;
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
-pub fn load_pattern_from_str(contents: &str) -> HashSet<Cell> {
+pub fn load_pattern_from_str(contents: &str) -> FxHashSet<Cell> {
     let mut cells = Vec::new();
     let mut x = 0;
     let mut y = 0;
@@ -60,10 +60,10 @@ pub fn load_pattern_from_str(contents: &str) -> HashSet<Cell> {
 }
 
 pub fn centre_cells(
-    cells: &HashSet<Cell>,
+    cells: &FxHashSet<Cell>,
     viewport_width: u32,
     viewport_height: u32,
-) -> HashSet<Cell> {
+) -> FxHashSet<Cell> {
     if cells.is_empty() {
         return cells.clone();
     }

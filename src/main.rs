@@ -35,6 +35,8 @@ fn main() {
     let width = canvas.width();
     let height = canvas.height();
 
+    let mut render_buffer = vec![0u8; (width * height * 4) as usize];
+
     // Load the embedded pattern and centre it.
     let pattern_str = include_str!("../patterns/gun-p165mwss.rle");
     let mut cells = pattern::load_pattern_from_str(pattern_str);
@@ -42,7 +44,11 @@ fn main() {
     let mut universe = universe::SparseUniverse::new(cells);
 
     // --- Keyboard state ---
-    let mut input_manager = InputManager::new();
+    let input_manager = InputManager::new();
+
+    let mut paused = false;
+    let mut steps_per_frame = 1;
+    const MAX_STEPS: usize = 1024;
 
     // --- Animation loop ---
     let f = Rc::new(RefCell::new(None::<Closure<dyn FnMut()>>));
@@ -53,52 +59,58 @@ fn main() {
 
         let mut dx = 0;
         let mut dy = 0;
-        if input.pressed.contains("k")
-            || input.pressed.contains("w")
-            || input.pressed.contains("ArrowUp")
-        {
+
+        //Controls
+        if input.is_pressed(input::KeyState::K) || input.is_pressed(input::KeyState::UP) {
             dy -= 1;
         }
-        if input.pressed.contains("j")
-            || input.pressed.contains("s")
-            || input.pressed.contains("ArrowDown")
-        {
+        if input.is_pressed(input::KeyState::J) || input.is_pressed(input::KeyState::DOWN) {
             dy += 1;
         }
-        if input.pressed.contains("h")
-            || input.pressed.contains("a")
-            || input.pressed.contains("ArrowLeft")
-        {
+        if input.is_pressed(input::KeyState::H) || input.is_pressed(input::KeyState::LEFT) {
             dx -= 1;
         }
-        if input.pressed.contains("l")
-            || input.pressed.contains("d")
-            || input.pressed.contains("ArrowRight")
-        {
+        if input.is_pressed(input::KeyState::L) || input.is_pressed(input::KeyState::RIGHT) {
             dx += 1;
         }
-        if input.just_pressed.contains("z") {
+        if input.is_just_pressed(input::KeyState::Z) {
             universe.zoom_in();
         }
-        if input.just_pressed.contains("x") {
+        if input.is_just_pressed(input::KeyState::X) {
             universe.zoom_out();
         }
+        if input.is_just_pressed(input::KeyState::P) {
+            paused = !paused;
+        }
+        if input.is_just_pressed(input::KeyState::O) {
+            steps_per_frame = (steps_per_frame * 2).min(MAX_STEPS);
+        }
+        if input.is_just_pressed(input::KeyState::I) {
+            steps_per_frame = (steps_per_frame / 2).max(1);
+        }
+
+        if !paused {
+            for _ in 0..steps_per_frame {
+                universe.tick();
+            }
+        }
+
         universe.pan(dx, dy);
 
-        // Simulation step
-        universe.tick();
-
         // HUD
+        let paused_text = if paused { "Paused" } else { "Running" };
         let text = format!(
-            "Camera: ({}, {}) | Cells: {}",
+            "Camera: ({}, {}) | Cells: {} | {} | Speed {}x",
             universe.camera_x(),
             universe.camera_y(),
-            universe.live_cells().len()
+            universe.live_cells().len(),
+            paused_text,
+            steps_per_frame
         );
         hud_element.set_text_content(Some(&text));
 
         // Render
-        renderer::render(&universe, &context, width, height);
+        renderer::render(&universe, &context, width, height, &mut render_buffer);
 
         // Next frame
         window()

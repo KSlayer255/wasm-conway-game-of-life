@@ -8,6 +8,7 @@ pub fn render(
     context: &CanvasRenderingContext2d,
     width: u32,
     height: u32,
+    rgba: &mut [u8],
 ) {
     let scale = universe.scale();
     let pixel_size = if scale < 0 {
@@ -17,13 +18,35 @@ pub fn render(
     };
 
     // 1. Create the pixel buffer
-    let mut rgba = vec![0u8; (width * height * 4) as usize];
     let bg_color = 30;
     rgba.fill(bg_color);
 
     let cell_color = 255;
     let camera_x = universe.camera_x();
     let camera_y = universe.camera_y();
+
+    let grid_color = 50; // Slightly lighter than bg, dark enough to be subtle.
+
+    for y in (0..height).step_by(pixel_size) {
+        let row_start = (y * width * 4) as usize;
+        let row_end = row_start + (width * 4) as usize;
+        for i in (row_start..row_end).step_by(4) {
+            rgba[i] = grid_color;
+            rgba[i + 1] = grid_color;
+            rgba[i + 2] = grid_color;
+            rgba[i + 3] = 255;
+        }
+    }
+
+    for x in (0..width).step_by(pixel_size) {
+        for y in 0..height {
+            let idx = ((y * width + x) as usize) * 4;
+            rgba[idx] = grid_color;
+            rgba[idx + 1] = grid_color;
+            rgba[idx + 2] = grid_color;
+            rgba[idx + 3] = 255;
+        }
+    }
 
     // 2. Draw live cells (scaled)
     for &(wx, wy) in universe.live_cells() {
@@ -57,38 +80,6 @@ pub fn render(
 
     // 3. Push pixel buffer to canvas
     let image_data =
-        ImageData::new_with_u8_clamped_array_and_sh(Clamped(&rgba), width, height).unwrap();
+        ImageData::new_with_u8_clamped_array_and_sh(Clamped(rgba), width, height).unwrap();
     context.put_image_data(&image_data, 0.0, 0.0).unwrap();
-
-    // 4. Draw grid lines (only when zoomed in)
-    if scale < 0 {
-        draw_grid_lines(context, width, height, pixel_size);
-    }
-}
-
-fn draw_grid_lines(context: &CanvasRenderingContext2d, width: u32, height: u32, pixel_size: u32) {
-    // Set up line style
-    context.set_stroke_style_str("rgba(140, 170, 200, 0.4)");
-    context.set_line_width(0.5);
-    context.begin_path();
-
-    // Vertical lines at every `pixel_size` pixels
-    let mut x = 0;
-    while x <= width {
-        let screen_x = x as f64;
-        context.move_to(screen_x, 0.0);
-        context.line_to(screen_x, height as f64);
-        x += pixel_size;
-    }
-
-    // Horizontal lines at every `pixel_size` pixels
-    let mut y = 0;
-    while y <= height {
-        let screen_y = y as f64;
-        context.move_to(0.0, screen_y);
-        context.line_to(width as f64, screen_y);
-        y += pixel_size;
-    }
-
-    context.stroke();
 }

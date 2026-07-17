@@ -1,16 +1,16 @@
 use crate::universe::Cell;
 use crate::universe::Universe;
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 pub struct SparseUniverse {
-    live_cells: HashSet<Cell>,
+    live_cells: FxHashSet<Cell>,
     camera_x: i32,
     camera_y: i32,
     scale: i32,
 }
 
 impl SparseUniverse {
-    pub fn new(cells: HashSet<Cell>) -> Self {
+    pub fn new(cells: FxHashSet<Cell>) -> Self {
         Self {
             live_cells: cells,
             camera_x: 0,
@@ -29,7 +29,7 @@ impl Universe for SparseUniverse {
         self.step();
     }
 
-    fn live_cells(&self) -> &HashSet<Cell> {
+    fn live_cells(&self) -> &FxHashSet<Cell> {
         &self.live_cells
     }
 
@@ -69,8 +69,8 @@ impl Universe for SparseUniverse {
 
 // ====== Private helper functions (Game of Life rules) ======
 
-fn step(live_cells: &HashSet<Cell>) -> HashSet<Cell> {
-    let mut candidates = HashSet::new();
+fn step(live_cells: &FxHashSet<Cell>) -> FxHashSet<Cell> {
+    let mut candidates = FxHashSet::default();
     for &(x, y) in live_cells {
         for dx in -1..=1 {
             for dy in -1..=1 {
@@ -79,7 +79,7 @@ fn step(live_cells: &HashSet<Cell>) -> HashSet<Cell> {
         }
     }
 
-    let mut next = HashSet::new();
+    let mut next = FxHashSet::default();
     for &(x, y) in &candidates {
         let neighbors = count_neighbors(live_cells, x, y);
         let alive = live_cells.contains(&(x, y));
@@ -90,7 +90,7 @@ fn step(live_cells: &HashSet<Cell>) -> HashSet<Cell> {
     next
 }
 
-fn count_neighbors(live_cells: &HashSet<Cell>, x: i32, y: i32) -> u8 {
+fn count_neighbors(live_cells: &FxHashSet<Cell>, x: i32, y: i32) -> u8 {
     let mut count = 0;
     for dx in -1..=1 {
         for dy in -1..=1 {
