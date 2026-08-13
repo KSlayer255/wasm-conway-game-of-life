@@ -68,7 +68,6 @@ impl Universe for SparseUniverse {
 }
 
 // ====== Private helper functions (Game of Life rules) ======
-
 fn step(live_cells: &FxHashSet<Cell>) -> FxHashSet<Cell> {
     let mut candidates = FxHashSet::default();
     for &(x, y) in live_cells {

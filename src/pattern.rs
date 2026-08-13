@@ -1,6 +1,55 @@
 use crate::universe::Cell;
 use rustc_hash::FxHashSet;
 
+use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{Request, RequestInit, Response, console, window}; // You'll need to add 'rand' crate
+//
+// Include the generated list of pattern filenames
+include!(concat!(env!("OUT_DIR"), "/pattern_list.rs"));
+
+pub fn random_pattern_name() -> &'static str {
+    let len = PATTERN_FILES.len() as f64;
+    // js_sys::Math::random() returns f64 in [0, 1)
+    let idx = (js_sys::Math::random() * len) as usize;
+    PATTERN_FILES[idx]
+}
+
+pub async fn fetch_pattern(filename: &str) -> Result<String, JsValue> {
+    let url = format!("/patterns/{}", filename);
+    console::log_1(&format!("file location: {}", url).into());
+    let win = window().unwrap();
+    let opts = RequestInit::new();
+    opts.set_method("GET");
+    let request = Request::new_with_str_and_init(&url, &opts)?;
+    console::log_1(&format!("Request: {:?}", request.text()).into());
+    let resp = JsFuture::from(win.fetch_with_request(&request)).await?;
+    let resp: Response = resp.dyn_into()?;
+    // --- Debug: Check status ---
+    let status = resp.status();
+    console::log_1(&format!("Response status: {}", status).into());
+    if !resp.ok() {
+        let err_msg = format!("HTTP error: {}", status);
+        console::error_1(&err_msg.clone().into());
+        return Err(JsValue::from_str(&err_msg));
+    }
+
+    // --- Read the response body as text ---
+    let text_promise = resp.text()?;
+    let text = JsFuture::from(text_promise).await?;
+    let text_str = text.as_string().unwrap_or_default();
+
+    // --- Log a preview of the content ---
+    let preview = if text_str.len() > 100 {
+        format!("{}...", &text_str[..100])
+    } else {
+        text_str.clone()
+    };
+    console::log_1(&format!("Response preview: {}", preview).into());
+    console::log_1(&format!("Total length: {} bytes", text_str.len()).into());
+    Ok(text_str)
+}
+
 pub fn load_pattern_from_str(contents: &str) -> FxHashSet<Cell> {
     let mut cells = Vec::new();
     let mut x = 0;

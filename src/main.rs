@@ -5,10 +5,11 @@ mod universe;
 
 use crate::input::InputManager;
 use crate::universe::Universe;
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::spawn_local;
 use web_sys::window;
 
 fn main() {
@@ -38,10 +39,28 @@ fn main() {
     let mut render_buffer = vec![0u8; (width * height * 4) as usize];
 
     // Load the embedded pattern and centre it.
-    let pattern_str = include_str!("../patterns/gun-p165mwss.rle");
-    let mut cells = pattern::load_pattern_from_str(pattern_str);
-    cells = pattern::centre_cells(&cells, width, height);
-    let mut universe = universe::SparseUniverse::new(cells);
+    let universe = Rc::new(RefCell::new(None::<universe::SparseUniverse>));
+    let current_pattern = Rc::new(RefCell::new(None::<String>));
+
+    let load_random_pattern = {
+        let universe = universe.clone();
+        let current_pattern = current_pattern.clone();
+        move |width: u32, height: u32| {
+            let universe = universe.clone();
+            let current_pattern = current_pattern.clone();
+            spawn_local(async move {
+                let pattern_name = pattern::random_pattern_name();
+                let content = pattern::fetch_pattern(pattern_name).await.unwrap();
+                let mut cells = pattern::load_pattern_from_str(&content);
+                cells = pattern::centre_cells(&cells, width, height);
+                let new_universe = universe::SparseUniverse::new(cells);
+                *universe.borrow_mut() = Some(new_universe);
+                *current_pattern.borrow_mut() = Some(pattern_name.to_string());
+            });
+        }
+    };
+
+    load_random_pattern(width, height);
 
     // --- Keyboard state ---
     let input_manager = InputManager::new();
@@ -74,10 +93,14 @@ fn main() {
             dx += 1;
         }
         if input.is_just_pressed(input::KeyState::Z) {
-            universe.zoom_in();
+            if let Some(ref mut u) = *universe.borrow_mut() {
+                u.zoom_in();
+            }
         }
         if input.is_just_pressed(input::KeyState::X) {
-            universe.zoom_out();
+            if let Some(ref mut u) = *universe.borrow_mut() {
+                u.zoom_out();
+            }
         }
         if input.is_just_pressed(input::KeyState::P) {
             paused = !paused;
@@ -90,29 +113,44 @@ fn main() {
         }
 
         if !paused {
-            for _ in 0..steps_per_frame {
-                universe.tick();
+            if let Some(ref mut u) = *universe.borrow_mut() {
+                for _ in 0..steps_per_frame {
+                    u.tick();
+                }
             }
         }
 
-        universe.pan(dx, dy);
+        if input.is_just_pressed(input::KeyState::R) {
+            load_random_pattern(width, height);
+        }
+
+        if let Some(ref mut u) = *universe.borrow_mut() {
+            u.pan(dx, dy);
+        }
 
         // HUD
-        let paused_text = if paused { "Paused" } else { "Running" };
+        let (cam_x, cam_y, cell_count, scale) = if let Some(ref u) = *universe.borrow() {
+            (u.camera_x(), u.camera_y(), u.live_cells().len(), u.scale())
+        } else {
+            (0, 0, 0, 0)
+        };
+        let pattern_name = current_pattern
+            .borrow()
+            .clone()
+            .unwrap_or_else(|| "None".to_string());
+        let paused_text = if paused { "⏸ Paused" } else { "▶ Running" };
         let text = format!(
-            "Camera: ({}, {}) | Cells: {} | {} | Speed {}x",
-            universe.camera_x(),
-            universe.camera_y(),
-            universe.live_cells().len(),
-            paused_text,
-            steps_per_frame
+            "Current Pattern = {} \n | Camera: ({}, {}) | Cells: {} | {} | Speed: {}x",
+            pattern_name, cam_x, cam_y, cell_count, paused_text, steps_per_frame
         );
         hud_element.set_text_content(Some(&text));
 
-        // Render
-        renderer::render(&universe, &context, width, height, &mut render_buffer);
+        // --- Render ---
+        if let Some(ref u) = *universe.borrow() {
+            renderer::render(u, &context, width, height, &mut render_buffer);
+        }
 
-        // Next frame
+        // --- Next frame ---
         window()
             .unwrap()
             .request_animation_frame(f.borrow().as_ref().unwrap().as_ref().unchecked_ref())

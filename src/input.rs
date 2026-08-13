@@ -25,6 +25,7 @@ impl KeyState {
     pub const P: u16 = 1 << 10; // Pause
     pub const O: u16 = 1 << 11; // Speed up (o for faster)
     pub const I: u16 = 1 << 12; // Speed down (i for slower)
+    pub const R: u16 = 1 << 13; // Reload pattern
 
     pub fn is_pressed(&self, key: u16) -> bool {
         self.pressed & key != 0
@@ -108,6 +109,7 @@ impl InputManager {
             "p" | "P" => KeyState::P,
             "o" | "O" => KeyState::O,
             "i" | "I" => KeyState::I,
+            "r" | "R" => KeyState::R,
             _ => 0,
         }
     }

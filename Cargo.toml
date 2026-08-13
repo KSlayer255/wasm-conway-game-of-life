@@ -2,12 +2,14 @@
 name = "wasm-conway"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [dependencies]
 console_error_panic_hook = "0.1.7"
 js-sys = "0.3.103"
 rustc-hash = "2.1.3"
 wasm-bindgen = "0.2.126"
+wasm-bindgen-futures = "0.4.77"
 web-sys = { version = "0.3.103", features = [
     "Window",
     "Document",
@@ -17,4 +19,8 @@ web-sys = { version = "0.3.103", features = [
     "CanvasRenderingContext2d",
     "ImageData",
     "KeyboardEvent",
+    "Request",
+    "RequestInit",
+    "Response",
+    "console",
 ] }
