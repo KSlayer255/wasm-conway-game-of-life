@@ -5,7 +5,7 @@ mod universe;
 
 use crate::input::InputManager;
 use crate::universe::Universe;
-use std::cell::{Ref, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
@@ -32,6 +32,11 @@ fn main() {
         .unwrap()
         .dyn_into::<web_sys::HtmlElement>()
         .unwrap();
+    let controls_element = document
+        .get_element_by_id("controls")
+        .unwrap()
+        .dyn_into::<web_sys::HtmlElement>()
+        .unwrap();
 
     let width = canvas.width();
     let height = canvas.height();
@@ -45,14 +50,14 @@ fn main() {
     let load_random_pattern = {
         let universe = universe.clone();
         let current_pattern = current_pattern.clone();
-        move |width: u32, height: u32| {
+        move || {
             let universe = universe.clone();
             let current_pattern = current_pattern.clone();
             spawn_local(async move {
                 let pattern_name = pattern::random_pattern_name();
                 let content = pattern::fetch_pattern(pattern_name).await.unwrap();
                 let mut cells = pattern::load_pattern_from_str(&content);
-                cells = pattern::centre_cells(&cells, width, height);
+                cells = pattern::centre_cells(&cells);
                 let new_universe = universe::SparseUniverse::new(cells);
                 *universe.borrow_mut() = Some(new_universe);
                 *current_pattern.borrow_mut() = Some(pattern_name.to_string());
@@ -60,13 +65,14 @@ fn main() {
         }
     };
 
-    load_random_pattern(width, height);
+    load_random_pattern();
 
     // --- Keyboard state ---
     let input_manager = InputManager::new();
 
     let mut paused = false;
     let mut steps_per_frame = 1;
+    let mut hud_visible = true;
     const MAX_STEPS: usize = 1024;
 
     // --- Animation loop ---
@@ -112,6 +118,16 @@ fn main() {
             steps_per_frame = (steps_per_frame / 2).max(1);
         }
 
+        if input.is_just_pressed(input::KeyState::T) {
+            hud_visible = !hud_visible;
+            let display = if hud_visible { "block" } else { "none" };
+            hud_element.style().set_property("display", display).ok();
+            controls_element
+                .style()
+                .set_property("display", display)
+                .ok();
+        }
+
         if !paused {
             if let Some(ref mut u) = *universe.borrow_mut() {
                 for _ in 0..steps_per_frame {
@@ -121,7 +137,7 @@ fn main() {
         }
 
         if input.is_just_pressed(input::KeyState::R) {
-            load_random_pattern(width, height);
+            load_random_pattern();
         }
 
         if let Some(ref mut u) = *universe.borrow_mut() {
@@ -129,21 +145,37 @@ fn main() {
         }
 
         // HUD
-        let (cam_x, cam_y, cell_count, scale) = if let Some(ref u) = *universe.borrow() {
-            (u.camera_x(), u.camera_y(), u.live_cells().len(), u.scale())
-        } else {
-            (0, 0, 0, 0)
-        };
-        let pattern_name = current_pattern
-            .borrow()
-            .clone()
-            .unwrap_or_else(|| "None".to_string());
-        let paused_text = if paused { "⏸ Paused" } else { "▶ Running" };
-        let text = format!(
-            "Current Pattern = {} \n | Camera: ({}, {}) | Cells: {} | {} | Speed: {}x",
-            pattern_name, cam_x, cam_y, cell_count, paused_text, steps_per_frame
-        );
-        hud_element.set_text_content(Some(&text));
+        if hud_visible {
+            let (cam_x, cam_y, cell_count, scale, generation) =
+                if let Some(ref u) = *universe.borrow() {
+                    (
+                        u.camera_x(),
+                        u.camera_y(),
+                        u.live_cells().len(),
+                        u.scale(),
+                        u.generation(),
+                    )
+                } else {
+                    (0, 0, 0, 0, 0)
+                };
+            let pattern_name = current_pattern
+                .borrow()
+                .clone()
+                .unwrap_or_else(|| "None".to_string());
+            let paused_text = if paused { "⏸ Paused" } else { "▶ Running" };
+            let text = format!(
+                "Current Pattern = {} | Camera: ({}, {}) | Zoom: {}x | Cells: {} | Gen: {} | {} | Speed: {}x",
+                pattern_name,
+                cam_x,
+                cam_y,
+                1 << (-scale),
+                cell_count,
+                generation,
+                paused_text,
+                steps_per_frame
+            );
+            hud_element.set_text_content(Some(&text));
+        }
 
         // --- Render ---
         if let Some(ref u) = *universe.borrow() {

@@ -7,6 +7,7 @@ pub struct SparseUniverse {
     camera_x: i32,
     camera_y: i32,
     scale: i32,
+    generation: u64,
 }
 
 impl SparseUniverse {
@@ -15,12 +16,14 @@ impl SparseUniverse {
             live_cells: cells,
             camera_x: 0,
             camera_y: 0,
-            scale: 0,
+            scale: -4,
+            generation: 0,
         }
     }
 
     fn step(&mut self) {
         self.live_cells = step(&self.live_cells);
+        self.generation += 1;
     }
 }
 
@@ -64,6 +67,10 @@ impl Universe for SparseUniverse {
         if self.scale < 0 {
             self.scale += 1
         }
+    }
+
+    fn generation(&self) -> u64 {
+        self.generation
     }
 }
 

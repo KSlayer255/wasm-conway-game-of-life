@@ -13,4 +13,5 @@ pub trait Universe {
     fn _set_scale(&mut self, scale: i32);
     fn zoom_in(&mut self);
     fn zoom_out(&mut self);
+    fn generation(&self) -> u64;
 }

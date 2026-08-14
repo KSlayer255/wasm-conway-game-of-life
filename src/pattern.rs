@@ -108,11 +108,7 @@ pub fn load_pattern_from_str(contents: &str) -> FxHashSet<Cell> {
     cells.into_iter().collect()
 }
 
-pub fn centre_cells(
-    cells: &FxHashSet<Cell>,
-    viewport_width: u32,
-    viewport_height: u32,
-) -> FxHashSet<Cell> {
+pub fn centre_cells(cells: &FxHashSet<Cell>) -> FxHashSet<Cell> {
     if cells.is_empty() {
         return cells.clone();
     }
@@ -121,11 +117,9 @@ pub fn centre_cells(
         (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
         |(mnx, mxx, mny, mxy), &(x, y)| (mnx.min(x), mxx.max(x), mny.min(y), mxy.max(y)),
     );
-    let pattern_w = max_x - min_x + 1;
-    let pattern_h = max_y - min_y + 1;
 
-    let shift_x = (viewport_width as i32 - pattern_w) / 2 - min_x;
-    let shift_y = (viewport_height as i32 - pattern_h) / 2 - min_y;
+    let shift_x = -(min_x + max_x) / 2;
+    let shift_y = -(min_y + max_y) / 2;
 
     cells
         .iter()
