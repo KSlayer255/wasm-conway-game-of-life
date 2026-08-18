@@ -150,25 +150,26 @@ impl Renderer {
         // pixel_size - independent of camera_x/camera_y (see cell_screen_pos).
         let offset_x = ((geo.half_w % geo.ps) + geo.ps) % geo.ps;
         let offset_y = ((geo.half_h % geo.ps) + geo.ps) % geo.ps;
-
-        for y in (offset_y as u32..height).step_by(geo.ps as usize) {
-            let row_start = (y * width * 4) as usize;
-            let row_end = row_start + (width * 4) as usize;
-            for i in (row_start..row_end).step_by(4) {
-                rgba[i] = GRID_COLOR[0];
-                rgba[i + 1] = GRID_COLOR[1];
-                rgba[i + 2] = GRID_COLOR[2];
-                rgba[i + 3] = 255;
+        if geo.ps > 1 {
+            for y in (offset_y as u32..height).step_by(geo.ps as usize) {
+                let row_start = (y * width * 4) as usize;
+                let row_end = row_start + (width * 4) as usize;
+                for i in (row_start..row_end).step_by(4) {
+                    rgba[i] = GRID_COLOR[0];
+                    rgba[i + 1] = GRID_COLOR[1];
+                    rgba[i + 2] = GRID_COLOR[2];
+                    rgba[i + 3] = 255;
+                }
             }
-        }
 
-        for x in (offset_x as u32..width).step_by(geo.ps as usize) {
-            for y in 0..height {
-                let idx = ((y * width + x) as usize) * 4;
-                rgba[idx] = GRID_COLOR[0];
-                rgba[idx + 1] = GRID_COLOR[1];
-                rgba[idx + 2] = GRID_COLOR[2];
-                rgba[idx + 3] = 255;
+            for x in (offset_x as u32..width).step_by(geo.ps as usize) {
+                for y in 0..height {
+                    let idx = ((y * width + x) as usize) * 4;
+                    rgba[idx] = GRID_COLOR[0];
+                    rgba[idx + 1] = GRID_COLOR[1];
+                    rgba[idx + 2] = GRID_COLOR[2];
+                    rgba[idx + 3] = 255;
+                }
             }
         }
 

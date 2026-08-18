@@ -24,4 +24,5 @@ web-sys = { version = "0.3.103", features = [
     "RequestInit",
     "Response",
     "console",
+    "Performance",
 ] }

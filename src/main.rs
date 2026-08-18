@@ -37,6 +37,7 @@ fn main() {
         .unwrap()
         .dyn_into::<web_sys::HtmlElement>()
         .unwrap();
+    let performance = window().unwrap().performance().unwrap();
 
     let width = canvas.width();
     let height = canvas.height();
@@ -72,9 +73,18 @@ fn main() {
     let input_manager = InputManager::new();
 
     let mut paused = false;
-    let mut steps_per_frame = 1;
     let mut hud_visible = true;
-    const MAX_STEPS: usize = 1024;
+
+    const DEFAULT_TICKS_PER_SECOND: f64 = 8.0;
+    const MIN_TICKS_PER_SECOND: f64 = 1.0 / 32.0; // as slow as 1 tick per 32s
+    const MAX_TICKS_PER_SECOND: f64 = 4096.0;
+    // Safety cap so a backgrounded tab catching back up doesn't try to
+    // replay an enormous backlog of ticks in a single frame.
+    const MAX_TICKS_PER_FRAME: u32 = 1024;
+
+    let mut ticks_per_second = DEFAULT_TICKS_PER_SECOND;
+    let mut tick_accumulator_ms: f64 = 0.0;
+    let mut last_tick_time = performance.now();
 
     // --- Animation loop ---
     let f = Rc::new(RefCell::new(None::<Closure<dyn FnMut()>>));
@@ -113,10 +123,10 @@ fn main() {
             paused = !paused;
         }
         if input.is_just_pressed(input::KeyState::O) {
-            steps_per_frame = (steps_per_frame * 2).min(MAX_STEPS);
+            ticks_per_second = (ticks_per_second * 2.0).min(MAX_TICKS_PER_SECOND);
         }
         if input.is_just_pressed(input::KeyState::I) {
-            steps_per_frame = (steps_per_frame / 2).max(1);
+            ticks_per_second = (ticks_per_second / 2.0).max(MIN_TICKS_PER_SECOND);
         }
 
         if input.is_just_pressed(input::KeyState::T) {
@@ -129,10 +139,28 @@ fn main() {
                 .ok();
         }
 
-        if !paused && let Some(ref mut u) = *universe.borrow_mut() {
-            for _ in 0..steps_per_frame {
-                u.tick();
+        let now = performance.now();
+        let delta_ms = now - last_tick_time;
+        last_tick_time = now;
+
+        if !paused {
+            tick_accumulator_ms += delta_ms;
+            let tick_interval_ms = 1000.0 / ticks_per_second;
+            let mut ticks_this_frame = 0u32;
+            if let Some(ref mut u) = *universe.borrow_mut() {
+                while tick_accumulator_ms >= tick_interval_ms
+                    && ticks_this_frame < MAX_TICKS_PER_FRAME
+                {
+                    u.tick();
+                    tick_accumulator_ms -= tick_interval_ms;
+                    ticks_this_frame += 1
+                }
             }
+            if tick_accumulator_ms > tick_interval_ms * MAX_TICKS_PER_FRAME as f64 {
+                tick_accumulator_ms = 0.0;
+            }
+        } else {
+            tick_accumulator_ms = 0.0;
         }
 
         if input.is_just_pressed(input::KeyState::R) {
@@ -162,6 +190,11 @@ fn main() {
                 .clone()
                 .unwrap_or_else(|| "None".to_string());
             let paused_text = if paused { "⏸ Paused" } else { "▶ Running" };
+            let speed_text = if ticks_per_second >= 1.0 {
+                format!("{:.2} ticks/s", ticks_per_second)
+            } else {
+                format!("1 tick/{:.1}s", 1.0 / ticks_per_second)
+            };
             let text = format!(
                 "Current Pattern = {} | Camera: ({}, {}) | Zoom: {}x | Cells: {} | Gen: {} | {} | Speed: {}x",
                 pattern_name,
@@ -171,7 +204,7 @@ fn main() {
                 cell_count,
                 generation,
                 paused_text,
-                steps_per_frame
+                speed_text
             );
             hud_element.set_text_content(Some(&text));
         }
