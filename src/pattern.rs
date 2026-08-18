@@ -1,3 +1,4 @@
+use crate::config::PATTERNS_FETCH_ROOT;
 use crate::universe::Cell;
 use rustc_hash::FxHashSet;
 
@@ -16,7 +17,7 @@ pub fn random_pattern_name() -> &'static str {
 }
 
 pub async fn fetch_pattern(filename: &str) -> Result<String, JsValue> {
-    let url = format!("patterns/{}", filename);
+    let url = format!("{}/{}", PATTERNS_FETCH_ROOT, filename);
     let win = window().unwrap();
     let opts = RequestInit::new();
     opts.set_method("GET");

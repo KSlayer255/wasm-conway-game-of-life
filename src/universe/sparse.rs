@@ -1,9 +1,8 @@
+use crate::config::{INITIAL_SCALE, MAX_HISTORY, MAX_SCALE, MIN_SCALE};
 use crate::universe::Cell;
 use crate::universe::Universe;
 use rustc_hash::FxHashSet;
 use std::collections::VecDeque;
-
-const MAX_HISTORY: usize = 256;
 
 pub struct SparseUniverse {
     history: VecDeque<FxHashSet<Cell>>,
@@ -24,7 +23,7 @@ impl SparseUniverse {
             cursor: 0,
             camera_x: 0,
             camera_y: 0,
-            scale: -4,
+            scale: INITIAL_SCALE,
         }
     }
 }
@@ -79,13 +78,13 @@ impl Universe for SparseUniverse {
     }
 
     fn zoom_in(&mut self) {
-        if self.scale > -8 {
+        if self.scale > -MAX_SCALE {
             self.scale -= 1
         }
     }
 
     fn zoom_out(&mut self) {
-        if self.scale < 0 {
+        if self.scale < MIN_SCALE {
             self.scale += 1
         }
     }

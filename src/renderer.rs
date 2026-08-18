@@ -1,13 +1,9 @@
+use crate::config::{BG_COLOR, CELL_COLOR, GRID_COLOR};
 use crate::universe::{Cell, Universe};
 use rustc_hash::FxHashSet;
 use wasm_bindgen::Clamped;
 use web_sys::CanvasRenderingContext2d;
 use web_sys::ImageData;
-
-// Color palette (R, G, B). Tweak these to change the wallpaper look.
-const BG_COLOR: [u8; 3] = [10, 12, 22]; // deep navy background
-const GRID_COLOR: [u8; 3] = [26, 30, 46]; // faint grid lines, just above bg
-const CELL_COLOR: [u8; 3] = [175, 220, 255]; // soft cyan-white live cells
 
 /// Precomputed screen-space geometry for a given camera/zoom, shared by both
 /// the full-redraw and incremental-redraw paths so they always agree on
@@ -89,49 +85,68 @@ impl Renderer {
             || geo.camera_y != self.prev_camera.1
             || universe.scale() != self.prev_scale;
 
-        let mut painted_anything = camera_or_zoom_changed;
-
         if camera_or_zoom_changed {
             self.full_redraw(&geo, universe, rgba);
-            self.prev_live_cells = universe.live_cells().clone();
+            self.prev_live_cells.clear();
+            self.prev_live_cells
+                .extend(universe.live_cells().iter().copied());
             self.prev_camera = (geo.camera_x, geo.camera_y);
             self.prev_scale = universe.scale();
             self.initialized = true;
-        } else {
-            let current = universe.live_cells();
 
-            // Cells that were on screen last frame but aren't anymore.
-            let died: Vec<Cell> = self.prev_live_cells.difference(current).copied().collect();
-            // Cells that are newly on screen this frame.
-            let born: Vec<Cell> = current.difference(&self.prev_live_cells).copied().collect();
-
-            for &(wx, wy) in &died {
-                self.restore_background(&geo, rgba, wx, wy);
-            }
-            for &(wx, wy) in &born {
-                self.paint_live(&geo, rgba, wx, wy);
-            }
-
-            if !died.is_empty() || !born.is_empty() {
-                painted_anything = true;
-                for cell in died {
-                    self.prev_live_cells.remove(&cell);
-                }
-                for cell in born {
-                    self.prev_live_cells.insert(cell);
-                }
-            }
+            let image_data =
+                ImageData::new_with_u8_clamped_array_and_sh(Clamped(rgba), self.width, self.height)
+                    .unwrap();
+            context.put_image_data(&image_data, 0.0, 0.0).unwrap();
         }
 
-        // Nothing changed (paused, camera fixed) - skip the upload entirely.
-        if !painted_anything {
+        let current = universe.live_cells();
+        let died: Vec<Cell> = self.prev_live_cells.difference(current).copied().collect();
+        let born: Vec<Cell> = current.difference(&self.prev_live_cells).copied().collect();
+
+        if died.is_empty() && born.is_empty() {
             return;
         }
+
+        let mut dirty: Option<(u32, u32, u32, u32)> = None;
+        for &(wx, wy) in &died {
+            if let Some(r) = self.restore_background(&geo, rgba, wx, wy) {
+                dirty = Some(union_rect(dirty, r))
+            }
+        }
+
+        for &(wx, wy) in &born {
+            if let Some(r) = self.paint_live(&geo, rgba, wx, wy) {
+                dirty = Some(union_rect(dirty, r))
+            }
+        }
+
+        for cell in died {
+            self.prev_live_cells.remove(&cell);
+        }
+
+        for cell in born {
+            self.prev_live_cells.insert(cell);
+        }
+
+        let Some((start_x, start_y, end_x, end_y)) = dirty else {
+            return;
+        };
 
         let image_data =
             ImageData::new_with_u8_clamped_array_and_sh(Clamped(rgba), self.width, self.height)
                 .unwrap();
-        context.put_image_data(&image_data, 0.0, 0.0).unwrap();
+        context
+            .put_image_data_with_dirty_x_and_dirty_y_and_dirty_width_and_dirty_height(
+                &image_data,
+                0.0,
+                0.0,
+                start_x as f64,
+                start_y as f64,
+                (end_x - start_x) as f64,
+                (end_y - start_y) as f64,
+            )
+            .unwrap();
     }
 
     fn full_redraw(&self, geo: &Geometry, universe: &dyn Universe, rgba: &mut [u8]) {
@@ -183,13 +198,15 @@ impl Renderer {
     /// reconstructing what `full_redraw` would have painted there. This is
     /// computed purely from geometry (which pixel is a grid line vs.
     /// background), so it's correct regardless of what was drawn before.
-    fn restore_background(&self, geo: &Geometry, rgba: &mut [u8], wx: i32, wy: i32) {
+    fn restore_background(
+        &self,
+        geo: &Geometry,
+        rgba: &mut [u8],
+        wx: i32,
+        wy: i32,
+    ) -> Option<(u32, u32, u32, u32)> {
         let (sx, sy) = geo.cell_screen_pos(wx, wy);
-        let Some((start_x, start_y, end_x, end_y)) =
-            clamp_rect(sx, sy, geo.ps, geo.width, geo.height)
-        else {
-            return;
-        };
+        let (start_x, start_y, end_x, end_y) = clamp_rect(sx, sy, geo.ps, geo.width, geo.height)?;
 
         for y in start_y..end_y {
             let is_grid_row = y as i32 == sy;
@@ -207,16 +224,19 @@ impl Renderer {
                 rgba[idx + 3] = 255;
             }
         }
+        Some((start_x, start_y, end_x, end_y))
     }
 
     /// Fills a single world cell's block entirely with the live-cell color.
-    fn paint_live(&self, geo: &Geometry, rgba: &mut [u8], wx: i32, wy: i32) {
+    fn paint_live(
+        &self,
+        geo: &Geometry,
+        rgba: &mut [u8],
+        wx: i32,
+        wy: i32,
+    ) -> Option<(u32, u32, u32, u32)> {
         let (sx, sy) = geo.cell_screen_pos(wx, wy);
-        let Some((start_x, start_y, end_x, end_y)) =
-            clamp_rect(sx, sy, geo.ps, geo.width, geo.height)
-        else {
-            return;
-        };
+        let (start_x, start_y, end_x, end_y) = clamp_rect(sx, sy, geo.ps, geo.width, geo.height)?;
 
         for y in start_y..end_y {
             for x in start_x..end_x {
@@ -227,6 +247,7 @@ impl Renderer {
                 rgba[idx + 3] = 255;
             }
         }
+        Some((start_x, start_y, end_x, end_y))
     }
 }
 
@@ -241,4 +262,11 @@ fn clamp_rect(sx: i32, sy: i32, ps: i32, width: u32, height: u32) -> Option<(u32
     let end_x = (sx + ps).min(width as i32) as u32;
     let end_y = (sy + ps).min(height as i32) as u32;
     Some((start_x, start_y, end_x, end_y))
+}
+
+fn union_rect(acc: Option<(u32, u32, u32, u32)>, r: (u32, u32, u32, u32)) -> (u32, u32, u32, u32) {
+    match acc {
+        None => r,
+        Some((ax0, ay0, ax1, ay1)) => (ax0.min(r.0), ay0.min(r.1), ax1.max(r.2), ay1.max(r.3)),
+    }
 }
