@@ -1,39 +1,64 @@
 use crate::universe::Cell;
 use crate::universe::Universe;
 use rustc_hash::FxHashSet;
+use std::collections::VecDeque;
+
+const MAX_HISTORY: usize = 256;
 
 pub struct SparseUniverse {
-    live_cells: FxHashSet<Cell>,
+    history: VecDeque<FxHashSet<Cell>>,
+    history_start_generation: u64,
+    cursor: usize,
     camera_x: i32,
     camera_y: i32,
     scale: i32,
-    generation: u64,
 }
 
 impl SparseUniverse {
     pub fn new(cells: FxHashSet<Cell>) -> Self {
+        let mut history = VecDeque::with_capacity(MAX_HISTORY);
+        history.push_back(cells);
         Self {
-            live_cells: cells,
+            history,
+            history_start_generation: 0,
+            cursor: 0,
             camera_x: 0,
             camera_y: 0,
             scale: -4,
-            generation: 0,
         }
-    }
-
-    fn step(&mut self) {
-        self.live_cells = step(&self.live_cells);
-        self.generation += 1;
     }
 }
 
 impl Universe for SparseUniverse {
     fn tick(&mut self) {
-        self.step();
+        if self.cursor + 1 < self.history.len() {
+            self.cursor += 1;
+            return;
+        }
+
+        let next = step(&self.history[self.cursor]);
+        self.history.push_back(next);
+
+        if self.history.len() > MAX_HISTORY {
+            self.history.pop_front();
+            self.history_start_generation += 1;
+        } else {
+            self.cursor += 1;
+        }
     }
 
     fn live_cells(&self) -> &FxHashSet<Cell> {
-        &self.live_cells
+        &self.history[self.cursor]
+    }
+
+    fn step_back(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+    }
+
+    fn is_replaying(&self) -> bool {
+        self.cursor + 1 < self.history.len()
     }
 
     fn camera_x(&self) -> i32 {
@@ -53,10 +78,6 @@ impl Universe for SparseUniverse {
         self.scale
     }
 
-    fn _set_scale(&mut self, scale: i32) {
-        self.scale = scale
-    }
-
     fn zoom_in(&mut self) {
         if self.scale > -8 {
             self.scale -= 1
@@ -70,7 +91,7 @@ impl Universe for SparseUniverse {
     }
 
     fn generation(&self) -> u64 {
-        self.generation
+        self.history_start_generation + self.cursor as u64
     }
 }
 

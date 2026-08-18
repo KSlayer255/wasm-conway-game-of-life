@@ -7,32 +7,34 @@ use web_sys::{KeyboardEvent, window};
 /// Bit flags for all keys we care about.
 #[derive(Clone, Copy, Default)]
 pub struct KeyState {
-    pub pressed: u16,
-    pub just_pressed: u16,
+    pub pressed: u32,
+    pub just_pressed: u32,
 }
 
 impl KeyState {
-    pub const K: u16 = 1 << 0;
-    pub const H: u16 = 1 << 1;
-    pub const J: u16 = 1 << 2;
-    pub const L: u16 = 1 << 3;
-    pub const UP: u16 = 1 << 4;
-    pub const DOWN: u16 = 1 << 5;
-    pub const LEFT: u16 = 1 << 6;
-    pub const RIGHT: u16 = 1 << 7;
-    pub const Z: u16 = 1 << 8;
-    pub const X: u16 = 1 << 9;
-    pub const P: u16 = 1 << 10; // Pause
-    pub const O: u16 = 1 << 11; // Speed up (o for faster)
-    pub const I: u16 = 1 << 12; // Speed down (i for slower)
-    pub const R: u16 = 1 << 13; // Reload pattern
-    pub const T: u16 = 1 << 14; // Toggle HUD
+    pub const K: u32 = 1 << 0;
+    pub const H: u32 = 1 << 1;
+    pub const J: u32 = 1 << 2;
+    pub const L: u32 = 1 << 3;
+    pub const UP: u32 = 1 << 4;
+    pub const DOWN: u32 = 1 << 5;
+    pub const LEFT: u32 = 1 << 6;
+    pub const RIGHT: u32 = 1 << 7;
+    pub const Z: u32 = 1 << 8;
+    pub const X: u32 = 1 << 9;
+    pub const P: u32 = 1 << 10; // Pause
+    pub const O: u32 = 1 << 11; // Speed up (o for faster)
+    pub const I: u32 = 1 << 12; // Speed down (i for slower)
+    pub const R: u32 = 1 << 13; // Reload pattern
+    pub const T: u32 = 1 << 14; // Toggle HUD
+    pub const STEP_BACK: u32 = 1 << 15; // ',' step back one generation while paused
+    pub const STEP_FORWARD: u32 = 1 << 16; // '.' step forward one generation while paused
 
-    pub fn is_pressed(&self, key: u16) -> bool {
+    pub fn is_pressed(&self, key: u32) -> bool {
         self.pressed & key != 0
     }
 
-    pub fn is_just_pressed(&self, key: u16) -> bool {
+    pub fn is_just_pressed(&self, key: u32) -> bool {
         self.just_pressed & key != 0
     }
 }
@@ -95,7 +97,7 @@ impl InputManager {
         }
     }
 
-    fn key_to_bit(key: &str) -> u16 {
+    fn key_to_bit(key: &str) -> u32 {
         match key {
             "k" | "K" => KeyState::K,
             "h" | "H" => KeyState::H,
@@ -112,6 +114,8 @@ impl InputManager {
             "i" | "I" => KeyState::I,
             "r" | "R" => KeyState::R,
             "t" | "T" => KeyState::T,
+            "," => KeyState::STEP_BACK,
+            "." => KeyState::STEP_FORWARD,
             _ => 0,
         }
     }

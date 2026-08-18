@@ -139,6 +139,20 @@ fn main() {
                 .ok();
         }
 
+        if paused
+            && input.is_just_pressed(input::KeyState::STEP_FORWARD)
+            && let Some(ref mut u) = *universe.borrow_mut()
+        {
+            u.tick();
+        }
+
+        if paused
+            && input.is_just_pressed(input::KeyState::STEP_BACK)
+            && let Some(ref mut u) = *universe.borrow_mut()
+        {
+            u.step_back();
+        }
+
         let now = performance.now();
         let delta_ms = now - last_tick_time;
         last_tick_time = now;
@@ -173,7 +187,7 @@ fn main() {
 
         // HUD
         if hud_visible {
-            let (cam_x, cam_y, cell_count, scale, generation) =
+            let (cam_x, cam_y, cell_count, scale, generation, replaying) =
                 if let Some(ref u) = *universe.borrow() {
                     (
                         u.camera_x(),
@@ -181,9 +195,10 @@ fn main() {
                         u.live_cells().len(),
                         u.scale(),
                         u.generation(),
+                        u.is_replaying(),
                     )
                 } else {
-                    (0, 0, 0, 0, 0)
+                    (0, 0, 0, 0, 0, false)
                 };
             let pattern_name = current_pattern
                 .borrow()
@@ -195,14 +210,16 @@ fn main() {
             } else {
                 format!("1 tick/{:.1}s", 1.0 / ticks_per_second)
             };
+            let history_text = if replaying { " rewound" } else { "" };
             let text = format!(
-                "Current Pattern = {} | Camera: ({}, {}) | Zoom: {}x | Cells: {} | Gen: {} | {} | Speed: {}x",
+                "Current Pattern = {} | Camera: ({}, {}) | Zoom: {}x | Cells: {} | Gen: {}{} | {} | Speed: {}x",
                 pattern_name,
                 cam_x,
                 cam_y,
                 1 << (-scale),
                 cell_count,
                 generation,
+                history_text,
                 paused_text,
                 speed_text
             );
