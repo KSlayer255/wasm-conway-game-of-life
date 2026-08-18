@@ -11,14 +11,12 @@ fn main() {
         for entry in fs::read_dir(patterns_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
-            if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    if ext == "rle" || ext == "txt" {
-                        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-                            entries.push(name.to_string());
-                        }
-                    }
-                }
+            if path.is_file()
+                && let Some(ext) = path.extension()
+                && (ext == "rle" || ext == "txt")
+                && let Some(name) = path.file_name().and_then(|s| s.to_str())
+            {
+                entries.push(name.to_string());
             }
         }
     }

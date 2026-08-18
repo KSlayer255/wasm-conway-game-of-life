@@ -42,6 +42,7 @@ fn main() {
     let height = canvas.height();
 
     let mut render_buffer = vec![0u8; (width * height * 4) as usize];
+    let mut renderer = renderer::Renderer::new(width, height);
 
     // Load the embedded pattern and centre it.
     let universe = Rc::new(RefCell::new(None::<universe::SparseUniverse>));
@@ -98,15 +99,15 @@ fn main() {
         if input.is_pressed(input::KeyState::L) || input.is_pressed(input::KeyState::RIGHT) {
             dx += 1;
         }
-        if input.is_just_pressed(input::KeyState::Z) {
-            if let Some(ref mut u) = *universe.borrow_mut() {
-                u.zoom_in();
-            }
+        if input.is_just_pressed(input::KeyState::Z)
+            && let Some(ref mut u) = *universe.borrow_mut()
+        {
+            u.zoom_in();
         }
-        if input.is_just_pressed(input::KeyState::X) {
-            if let Some(ref mut u) = *universe.borrow_mut() {
-                u.zoom_out();
-            }
+        if input.is_just_pressed(input::KeyState::X)
+            && let Some(ref mut u) = *universe.borrow_mut()
+        {
+            u.zoom_out();
         }
         if input.is_just_pressed(input::KeyState::P) {
             paused = !paused;
@@ -128,11 +129,9 @@ fn main() {
                 .ok();
         }
 
-        if !paused {
-            if let Some(ref mut u) = *universe.borrow_mut() {
-                for _ in 0..steps_per_frame {
-                    u.tick();
-                }
+        if !paused && let Some(ref mut u) = *universe.borrow_mut() {
+            for _ in 0..steps_per_frame {
+                u.tick();
             }
         }
 
@@ -179,7 +178,7 @@ fn main() {
 
         // --- Render ---
         if let Some(ref u) = *universe.borrow() {
-            renderer::render(u, &context, width, height, &mut render_buffer);
+            renderer.render(u, &context, &mut render_buffer);
         }
 
         // --- Next frame ---
