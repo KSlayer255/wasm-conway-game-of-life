@@ -1,4 +1,4 @@
-use crate::config::{INITIAL_SCALE, MAX_HISTORY, MAX_SCALE, MIN_SCALE};
+use crate::config::MAX_HISTORY;
 use crate::universe::Cell;
 use crate::universe::Universe;
 use rustc_hash::FxHashSet;
@@ -8,9 +8,6 @@ pub struct SparseUniverse {
     history: VecDeque<FxHashSet<Cell>>,
     history_start_generation: u64,
     cursor: usize,
-    camera_x: i32,
-    camera_y: i32,
-    scale: i32,
 }
 
 impl SparseUniverse {
@@ -21,9 +18,6 @@ impl SparseUniverse {
             history,
             history_start_generation: 0,
             cursor: 0,
-            camera_x: 0,
-            camera_y: 0,
-            scale: INITIAL_SCALE,
         }
     }
 }
@@ -58,35 +52,6 @@ impl Universe for SparseUniverse {
 
     fn is_replaying(&self) -> bool {
         self.cursor + 1 < self.history.len()
-    }
-
-    fn camera_x(&self) -> i32 {
-        self.camera_x
-    }
-
-    fn camera_y(&self) -> i32 {
-        self.camera_y
-    }
-
-    fn pan(&mut self, dx: i32, dy: i32) {
-        self.camera_x += dx;
-        self.camera_y += dy;
-    }
-
-    fn scale(&self) -> i32 {
-        self.scale
-    }
-
-    fn zoom_in(&mut self) {
-        if self.scale > -MAX_SCALE {
-            self.scale -= 1
-        }
-    }
-
-    fn zoom_out(&mut self) {
-        if self.scale < MIN_SCALE {
-            self.scale += 1
-        }
     }
 
     fn generation(&self) -> u64 {

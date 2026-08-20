@@ -1,9 +1,11 @@
+mod camera;
 mod config;
 mod input;
 mod pattern;
 mod renderer;
 mod universe;
 
+use crate::camera::Camera;
 use crate::input::InputManager;
 use crate::universe::{SparseUniverse, Universe};
 use std::cell::RefCell;
@@ -19,6 +21,7 @@ use web_sys::window;
 /// the actual per-frame logic lives in the methods below.
 struct App {
     universe: Rc<RefCell<Option<SparseUniverse>>>,
+    camera: Camera,
     current_pattern: Rc<RefCell<Option<String>>>,
     renderer: renderer::Renderer,
     render_buffer: Vec<u8>,
@@ -32,6 +35,11 @@ struct App {
     ticks_per_second: f64,
     tick_accumulator_ms: f64,
     last_tick_time: f64,
+    pan_accum_x_px: f64,
+    pan_accum_y_px: f64,
+    hud_last_text: String,
+    hud_last_update_time: f64,
+    hud_last_paused: bool,
 }
 
 impl App {
@@ -46,6 +54,7 @@ impl App {
         let last_tick_time = performance.now();
         Self {
             universe: Rc::new(RefCell::new(None)),
+            camera: Camera::new(),
             current_pattern: Rc::new(RefCell::new(None)),
             renderer: renderer::Renderer::new(width, height),
             render_buffer: vec![0u8; (width * height * 4) as usize],
@@ -56,9 +65,14 @@ impl App {
             input_manager: InputManager::new(),
             paused: false,
             hud_visible: true,
-            ticks_per_second: config::DEFAULT_TICKS_PER_SECOND,
             tick_accumulator_ms: 0.0,
             last_tick_time,
+            ticks_per_second: config::DEFAULT_TICKS_PER_SECOND,
+            pan_accum_x_px: 0.0,
+            pan_accum_y_px: 0.0,
+            hud_last_text: String::new(),
+            hud_last_update_time: f64::NEG_INFINITY,
+            hud_last_paused: false,
         }
     }
 
@@ -84,15 +98,11 @@ impl App {
             dx += 1;
         }
 
-        if input.is_just_pressed(input::KeyState::Z)
-            && let Some(ref mut u) = *self.universe.borrow_mut()
-        {
-            u.zoom_in();
+        if input.is_just_pressed(input::KeyState::Z) {
+            self.camera.zoom_in();
         }
-        if input.is_just_pressed(input::KeyState::X)
-            && let Some(ref mut u) = *self.universe.borrow_mut()
-        {
-            u.zoom_out();
+        if input.is_just_pressed(input::KeyState::X) {
+            self.camera.zoom_out();
         }
         if input.is_just_pressed(input::KeyState::P) {
             self.paused = !self.paused;
@@ -163,30 +173,55 @@ impl App {
             self.load_random_pattern();
         }
 
-        if let Some(ref mut u) = *self.universe.borrow_mut() {
-            u.pan(dx, dy);
+        let ps = renderer::pixel_size_for_scale(self.camera.scale()) as f64;
+        let px_to_move = config::PAN_SPEED_PX_PER_SEC * (delta_ms / 1000.0);
+
+        if dx != 0 {
+            self.pan_accum_x_px += px_to_move * dx as f64;
+        } else {
+            self.pan_accum_x_px = 0.0;
+        }
+        if dy != 0 {
+            self.pan_accum_y_px += px_to_move * dy as f64;
+        } else {
+            self.pan_accum_y_px = 0.0;
+        }
+
+        let cells_x = (self.pan_accum_x_px / ps).trunc() as i32;
+        let cells_y = (self.pan_accum_y_px / ps).trunc() as i32;
+
+        self.pan_accum_x_px -= cells_x as f64 * ps;
+        self.pan_accum_y_px -= cells_y as f64 * ps;
+
+        if cells_x != 0 || cells_y != 0 {
+            self.camera.pan(cells_x, cells_y);
         }
     }
 
     /// Rebuilds and writes the HUD text, if visible. (Still rebuilds every
     /// frame regardless of whether anything changed — see roadmap item 5.)
-    fn update_hud(&self) {
+    fn update_hud(&mut self) {
         if !self.hud_visible {
             return;
         }
-        let (cam_x, cam_y, cell_count, scale, generation, replaying) =
-            if let Some(ref u) = *self.universe.borrow() {
-                (
-                    u.camera_x(),
-                    u.camera_y(),
-                    u.live_cells().len(),
-                    u.scale(),
-                    u.generation(),
-                    u.is_replaying(),
-                )
-            } else {
-                (0, 0, 0, 0, 0, false)
-            };
+
+        let now = self.performance.now();
+        let pause_changed = self.paused != self.hud_last_paused;
+        let due = now - self.hud_last_update_time >= config::HUD_UPDATE_INTERVAL_MS;
+
+        if !pause_changed && !due {
+            return;
+        }
+
+        let (cell_count, generation, replaying) = if let Some(ref u) = *self.universe.borrow() {
+            (u.live_cells().len(), u.generation(), u.is_replaying())
+        } else {
+            (0, 0, false)
+        };
+        let cam_x = self.camera.x();
+        let cam_y = self.camera.y();
+        let scale = self.camera.scale();
+
         let pattern_name = self
             .current_pattern
             .borrow()
@@ -215,20 +250,28 @@ impl App {
             paused_text,
             speed_text
         );
-        self.hud_element.set_text_content(Some(&text));
+
+        if text != self.hud_last_text {
+            self.hud_element.set_text_content(Some(&text));
+            self.hud_last_text = text;
+        }
+        self.hud_last_update_time = now;
+        self.hud_last_paused = self.paused;
     }
 
     /// Paints the current simulation state, if a universe has finished loading.
     fn render(&mut self) {
         if let Some(ref u) = *self.universe.borrow() {
             self.renderer
-                .render(u, &self.context, &mut self.render_buffer);
+                .render(u, &self.camera, &self.context, &mut self.render_buffer);
         }
     }
 
     /// Kicks off an async fetch + parse of a random pattern from the
     /// library, swapping it in once it's ready.
-    fn load_random_pattern(&self) {
+    fn load_random_pattern(&mut self) {
+        self.camera = Camera::new();
+
         let universe = self.universe.clone();
         let current_pattern = self.current_pattern.clone();
         spawn_local(async move {
@@ -292,7 +335,7 @@ fn main() {
         height,
     )));
 
-    app.borrow().load_random_pattern();
+    app.borrow_mut().load_random_pattern();
 
     // --- Animation loop ---
     let f = Rc::new(RefCell::new(None::<Closure<dyn FnMut()>>));

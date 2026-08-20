@@ -27,6 +27,21 @@ pub const MAX_TICKS_PER_SECOND: f64 = 4096.0;
 /// an enormous backlog of ticks in a single animation frame.
 pub const MAX_TICKS_PER_FRAME: u32 = 1024;
 
+// --- Camera panning ---
+/// Camera pan speed in screen pixels per second. Kept constant regardless
+/// of zoom level (converted to world cells using the current pixel size)
+/// and regardless of refresh rate (converted using measured frame delta
+/// time) - see `App::update` in main.rs.
+pub const PAN_SPEED_PX_PER_SEC: f64 = 600.0;
+
+// --- HUD ---
+/// Minimum time between HUD text rebuilds/writes, in milliseconds. ~10Hz -
+/// frequent enough that generation/cell counts still feel live, infrequent
+/// enough to avoid a `set_text_content` call every animation frame. State
+/// changes that should feel instant (e.g. pause/run) bypass this throttle -
+/// see `App::update_hud` in main.rs.
+pub const HUD_UPDATE_INTERVAL_MS: f64 = 100.0;
+
 // --- DOM ---
 pub const CANVAS_ELEMENT_ID: &str = "canvas";
 pub const HUD_ELEMENT_ID: &str = "hud";

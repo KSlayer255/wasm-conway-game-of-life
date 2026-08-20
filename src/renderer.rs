@@ -1,3 +1,4 @@
+use crate::camera::Camera;
 use crate::config::{BG_COLOR, CELL_COLOR, GRID_COLOR};
 use crate::universe::{Cell, Universe};
 use rustc_hash::FxHashSet;
@@ -18,22 +19,25 @@ struct Geometry {
     camera_y: i32,
 }
 
+pub fn pixel_size_for_scale(scale: i32) -> i32 {
+    if scale < 0 {
+        1i32 << (-scale) as u32 // Zoomed in
+    } else {
+        1 // Zoomed out (1:1)
+    }
+}
+
 impl Geometry {
-    fn new(universe: &dyn Universe, width: u32, height: u32) -> Self {
-        let scale = universe.scale();
-        let pixel_size: usize = if scale < 0 {
-            1usize << (-scale) as u32 // Zoomed in
-        } else {
-            1 // Zoomed out (1:1)
-        };
+    fn new(camera: &Camera, width: u32, height: u32) -> Self {
+        let scale = camera.scale();
         Self {
             width,
             height,
             half_w: (width / 2) as i32,
             half_h: (height / 2) as i32,
-            ps: pixel_size as i32,
-            camera_x: universe.camera_x(),
-            camera_y: universe.camera_y(),
+            ps: pixel_size_for_scale(scale),
+            camera_x: camera.x(),
+            camera_y: camera.y(),
         }
     }
 
@@ -76,14 +80,15 @@ impl Renderer {
     pub fn render(
         &mut self,
         universe: &dyn Universe,
+        camera: &Camera,
         context: &CanvasRenderingContext2d,
         rgba: &mut [u8],
     ) {
-        let geo = Geometry::new(universe, self.width, self.height);
+        let geo = Geometry::new(camera, self.width, self.height);
         let camera_or_zoom_changed = !self.initialized
             || geo.camera_x != self.prev_camera.0
             || geo.camera_y != self.prev_camera.1
-            || universe.scale() != self.prev_scale;
+            || camera.scale() != self.prev_scale;
 
         if camera_or_zoom_changed {
             self.full_redraw(&geo, universe, rgba);
@@ -91,7 +96,7 @@ impl Renderer {
             self.prev_live_cells
                 .extend(universe.live_cells().iter().copied());
             self.prev_camera = (geo.camera_x, geo.camera_y);
-            self.prev_scale = universe.scale();
+            self.prev_scale = camera.scale();
             self.initialized = true;
 
             let image_data =
@@ -165,7 +170,7 @@ impl Renderer {
         // pixel_size - independent of camera_x/camera_y (see cell_screen_pos).
         let offset_x = ((geo.half_w % geo.ps) + geo.ps) % geo.ps;
         let offset_y = ((geo.half_h % geo.ps) + geo.ps) % geo.ps;
-        if geo.ps > 1 {
+        if geo.ps > 5 {
             for y in (offset_y as u32..height).step_by(geo.ps as usize) {
                 let row_start = (y * width * 4) as usize;
                 let row_end = row_start + (width * 4) as usize;
