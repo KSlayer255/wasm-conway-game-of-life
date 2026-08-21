@@ -113,3 +113,114 @@ pub fn centre_cells(cells: &FxHashSet<Cell>) -> FxHashSet<Cell> {
         .map(|&(x, y)| (x + shift_x, y + shift_y))
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn set(cells: &[(i32, i32)]) -> FxHashSet<Cell> {
+        cells.iter().copied().collect()
+    }
+
+    // --- load_pattern_from_str: RLE ---
+
+    #[test]
+    fn parses_rle_glider() {
+        let rle = "x = 3, y = 3, rule = B3/S23\nbob$2bo$3o!";
+        let cells = load_pattern_from_str(rle);
+        assert_eq!(cells, set(&[(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)]));
+    }
+
+    #[test]
+    fn rle_header_and_comment_lines_are_ignored() {
+        let rle = "#C A comment about the pattern\nx = 2, y = 1, rule = B3/S23\n2o!";
+        let cells = load_pattern_from_str(rle);
+        assert_eq!(cells, set(&[(0, 0), (1, 0)]));
+    }
+
+    #[test]
+    fn rle_without_trailing_bang_does_not_panic() {
+        let rle = "x = 1, y = 1\n3o";
+        let cells = load_pattern_from_str(rle);
+        assert_eq!(cells, set(&[(0, 0), (1, 0), (2, 0)]));
+    }
+
+    #[test]
+    fn rle_unrecognized_characters_are_ignored_not_fatal() {
+        let rle = "x = 1, y = 1\nzzz3o!";
+        let cells = load_pattern_from_str(rle);
+        assert_eq!(cells, set(&[(0, 0), (1, 0), (2, 0)]));
+    }
+
+    // --- load_pattern_from_str: plaintext ---
+
+    #[test]
+    fn parses_plaintext_blinker_no_comment_line() {
+        // No '!' anywhere in this input, so it correctly takes the
+        // plaintext branch - see the note on the format-detection heuristic
+        // in the PR/chat notes for input that *does* contain '!'.
+        let plaintext = ".O.\n.O.\n.O.";
+        let cells = load_pattern_from_str(plaintext);
+        assert_eq!(cells, set(&[(1, 0), (1, 1), (1, 2)]));
+    }
+
+    #[test]
+    fn plaintext_accepts_star_as_well_as_o() {
+        let plaintext = "*.\n.*";
+        let cells = load_pattern_from_str(plaintext);
+        assert_eq!(cells, set(&[(0, 0), (1, 1)]));
+    }
+
+    #[test]
+    fn plaintext_blank_lines_are_skipped_not_counted_as_rows() {
+        let plaintext = "O.\n\n.O";
+        let cells = load_pattern_from_str(plaintext);
+        assert_eq!(cells, set(&[(0, 0), (1, 1)]));
+    }
+
+    // --- load_pattern_from_str: edge cases ---
+
+    #[test]
+    fn empty_input_produces_no_cells() {
+        assert_eq!(load_pattern_from_str(""), FxHashSet::default());
+    }
+
+    #[test]
+    fn whitespace_only_input_produces_no_cells() {
+        assert_eq!(load_pattern_from_str("   \n  \n"), FxHashSet::default());
+    }
+
+    // --- centre_cells ---
+
+    #[test]
+    fn centre_cells_empty_set_stays_empty() {
+        let empty: FxHashSet<Cell> = FxHashSet::default();
+        assert_eq!(centre_cells(&empty), empty);
+    }
+
+    #[test]
+    fn centre_cells_single_cell_moves_to_origin() {
+        let cells = set(&[(5, 5)]);
+        assert_eq!(centre_cells(&cells), set(&[(0, 0)]));
+    }
+
+    #[test]
+    fn centre_cells_odd_width_and_height_centers_symmetrically() {
+        // x spans 0..=2 (odd width 3), y spans 0..=2 (odd height 3).
+        let cells = set(&[(0, 0), (2, 0), (0, 2), (2, 2)]);
+        let centred = centre_cells(&cells);
+        assert_eq!(centred, set(&[(-1, -1), (1, -1), (-1, 1), (1, 1)]));
+    }
+
+    #[test]
+    fn centre_cells_even_width_and_height_rounds_toward_zero() {
+        // x spans 0..=1 (even width 2), y spans 0..=1 (even height 2).
+        // -(0 + 1) / 2 == 0 under Rust's truncating integer division, so
+        // this shape doesn't shift at all - perfect symmetry isn't
+        // possible for an even span around a single integer center, so
+        // this documents the actual (toward-zero) behavior rather than
+        // asserting an idealized one.
+        let cells = set(&[(0, 0), (1, 0), (0, 1), (1, 1)]);
+        assert_eq!(centre_cells(&cells), cells);
+    }
+}

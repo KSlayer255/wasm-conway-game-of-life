@@ -120,3 +120,84 @@ impl InputManager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lowercase_and_uppercase_letters_map_to_same_bit() {
+        assert_eq!(InputManager::key_to_bit("k"), KeyState::K);
+        assert_eq!(InputManager::key_to_bit("K"), KeyState::K);
+        assert_eq!(InputManager::key_to_bit("r"), KeyState::R);
+        assert_eq!(InputManager::key_to_bit("R"), KeyState::R);
+    }
+
+    #[test]
+    fn arrow_keys_map_to_directional_bits() {
+        assert_eq!(InputManager::key_to_bit("ArrowUp"), KeyState::UP);
+        assert_eq!(InputManager::key_to_bit("ArrowDown"), KeyState::DOWN);
+        assert_eq!(InputManager::key_to_bit("ArrowLeft"), KeyState::LEFT);
+        assert_eq!(InputManager::key_to_bit("ArrowRight"), KeyState::RIGHT);
+    }
+
+    #[test]
+    fn punctuation_keys_map_to_step_bits() {
+        assert_eq!(InputManager::key_to_bit(","), KeyState::STEP_BACK);
+        assert_eq!(InputManager::key_to_bit("."), KeyState::STEP_FORWARD);
+    }
+
+    #[test]
+    fn unbound_keys_map_to_zero() {
+        assert_eq!(InputManager::key_to_bit("q"), 0);
+        assert_eq!(InputManager::key_to_bit("Shift"), 0);
+        assert_eq!(InputManager::key_to_bit("Escape"), 0);
+        assert_eq!(InputManager::key_to_bit(""), 0);
+    }
+
+    #[test]
+    fn every_bit_flag_is_distinct() {
+        // Guards against a future copy-paste bug where two keys end up
+        // sharing a bit, which would make them impossible to tell apart.
+        let bits = [
+            KeyState::K,
+            KeyState::H,
+            KeyState::J,
+            KeyState::L,
+            KeyState::UP,
+            KeyState::DOWN,
+            KeyState::LEFT,
+            KeyState::RIGHT,
+            KeyState::Z,
+            KeyState::X,
+            KeyState::P,
+            KeyState::O,
+            KeyState::I,
+            KeyState::R,
+            KeyState::T,
+            KeyState::STEP_BACK,
+            KeyState::STEP_FORWARD,
+        ];
+        let combined = bits.iter().fold(0u32, |acc, &b| acc | b);
+        let total_set_bits: u32 = bits.iter().map(|b| b.count_ones()).sum();
+        assert_eq!(
+            combined.count_ones(),
+            total_set_bits,
+            "two key bits overlap"
+        );
+    }
+
+    #[test]
+    fn is_pressed_and_is_just_pressed_read_correct_bits() {
+        let state = KeyState {
+            pressed: KeyState::K | KeyState::R,
+            just_pressed: KeyState::R,
+        };
+        assert!(state.is_pressed(KeyState::K));
+        assert!(state.is_pressed(KeyState::R));
+        assert!(!state.is_pressed(KeyState::J));
+
+        assert!(state.is_just_pressed(KeyState::R));
+        assert!(!state.is_just_pressed(KeyState::K));
+    }
+}

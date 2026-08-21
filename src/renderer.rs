@@ -275,3 +275,120 @@ fn union_rect(acc: Option<(u32, u32, u32, u32)>, r: (u32, u32, u32, u32)) -> (u3
         Some((ax0, ay0, ax1, ay1)) => (ax0.min(r.0), ay0.min(r.1), ax1.max(r.2), ay1.max(r.3)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::camera::Camera;
+
+    // --- clamp_rect ---
+
+    #[test]
+    fn clamp_rect_fully_on_screen() {
+        assert_eq!(clamp_rect(10, 10, 8, 100, 100), Some((10, 10, 18, 18)));
+    }
+
+    #[test]
+    fn clamp_rect_clips_to_viewport_edges() {
+        // Straddles the bottom-right edge of a 100x100 viewport.
+        assert_eq!(clamp_rect(95, 95, 8, 100, 100), Some((95, 95, 100, 100)));
+        // Straddles the top-left edge (negative sx/sy).
+        assert_eq!(clamp_rect(-3, -3, 8, 100, 100), Some((0, 0, 5, 5)));
+    }
+
+    #[test]
+    fn clamp_rect_entirely_off_screen_returns_none() {
+        assert_eq!(clamp_rect(200, 10, 8, 100, 100), None); // past right
+        assert_eq!(clamp_rect(10, 200, 8, 100, 100), None); // past bottom
+        assert_eq!(clamp_rect(-20, 10, 8, 100, 100), None); // past left
+        assert_eq!(clamp_rect(10, -20, 8, 100, 100), None); // past top
+    }
+
+    #[test]
+    fn clamp_rect_touching_far_edge_exactly_is_off_screen() {
+        // A block starting exactly at the viewport's far edge covers zero
+        // visible pixels.
+        assert_eq!(clamp_rect(100, 10, 8, 100, 100), None);
+    }
+
+    // --- union_rect (dirty-rect accumulation, item 1) ---
+
+    #[test]
+    fn union_rect_seeds_from_none() {
+        assert_eq!(union_rect(None, (5, 5, 10, 10)), (5, 5, 10, 10));
+    }
+
+    #[test]
+    fn union_rect_grows_to_cover_disjoint_rects() {
+        let acc = Some((5, 5, 10, 10));
+        assert_eq!(union_rect(acc, (20, 2, 25, 8)), (5, 2, 25, 10));
+    }
+
+    #[test]
+    fn union_rect_handles_overlapping_rects() {
+        let acc = Some((0, 0, 10, 10));
+        assert_eq!(union_rect(acc, (5, 5, 15, 15)), (0, 0, 15, 15));
+    }
+
+    // --- pixel_size_for_scale ---
+
+    #[test]
+    fn pixel_size_doubles_per_zoom_level() {
+        assert_eq!(pixel_size_for_scale(0), 1);
+        assert_eq!(pixel_size_for_scale(-1), 2);
+        assert_eq!(pixel_size_for_scale(-4), 16);
+        assert_eq!(pixel_size_for_scale(-8), 256);
+    }
+
+    // --- Geometry::cell_screen_pos ---
+
+    /// Builds a `Camera` at a specific position/zoom using only its public
+    /// API (pan/zoom_in/zoom_out), since its fields are private by design.
+    fn camera_at(x: i32, y: i32, scale: i32) -> Camera {
+        let mut camera = Camera::new();
+        camera.pan(x, y);
+        while camera.scale() > scale {
+            camera.zoom_in();
+        }
+        while camera.scale() < scale {
+            camera.zoom_out();
+        }
+        camera
+    }
+
+    #[test]
+    fn cell_screen_pos_camera_cell_is_screen_centered() {
+        let camera = camera_at(5, 5, -2); // ps = 4
+        let geo = Geometry::new(&camera, 200, 100);
+        assert_eq!(geo.cell_screen_pos(5, 5), (100, 50));
+    }
+
+    #[test]
+    fn cell_screen_pos_scales_with_zoom() {
+        let camera = camera_at(0, 0, -3); // ps = 8
+        let geo = Geometry::new(&camera, 200, 100);
+        assert_eq!(geo.cell_screen_pos(1, 0), (108, 50));
+        assert_eq!(geo.cell_screen_pos(0, 1), (100, 58));
+    }
+
+    // --- dirty-rect calculation, combining clamp_rect + union_rect the
+    // way Renderer::render does for an incremental frame ---
+
+    #[test]
+    fn dirty_rect_covers_all_changed_cells() {
+        let camera = camera_at(0, 0, -3); // ps = 8
+        let geo = Geometry::new(&camera, 200, 100);
+        let changed = [(0, 0), (2, 0)]; // two cells, 16px apart on screen
+
+        let mut dirty: Option<(u32, u32, u32, u32)> = None;
+        for &(wx, wy) in &changed {
+            let (sx, sy) = geo.cell_screen_pos(wx, wy);
+            if let Some(r) = clamp_rect(sx, sy, geo.ps, geo.width, geo.height) {
+                dirty = Some(union_rect(dirty, r));
+            }
+        }
+
+        // (0,0) covers screen x [100,108); (2,0) covers [116,124).
+        assert_eq!(dirty, Some((100, 50, 124, 58)));
+    }
+}
