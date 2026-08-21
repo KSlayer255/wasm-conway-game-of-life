@@ -262,8 +262,13 @@ impl App {
     /// Paints the current simulation state, if a universe has finished loading.
     fn render(&mut self) {
         if let Some(ref u) = *self.universe.borrow() {
-            self.renderer
-                .render(u, &self.camera, &self.context, &mut self.render_buffer);
+            self.renderer.render(
+                u,
+                &self.camera,
+                &self.context,
+                &mut self.render_buffer,
+                self.last_tick_time,
+            );
         }
     }
 

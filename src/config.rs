@@ -7,7 +7,21 @@
 // --- Color palette (R, G, B). Tweak these to change the wallpaper look. ---
 pub const BG_COLOR: [u8; 3] = [10, 12, 22]; // deep navy background
 pub const GRID_COLOR: [u8; 3] = [26, 30, 46]; // faint grid lines, just above bg
-pub const CELL_COLOR: [u8; 3] = [175, 220, 255]; // soft cyan-white live cells
+
+// --- Cell age gradient (HSL) ---
+// Interpolated by hue rather than by RGB channel, so the gradient sweeps
+// green -> yellow -> orange -> red instead of cutting through a muddy gray
+// midpoint the way a straight RGB lerp between two saturated colors would.
+/// Hue of a cell the instant it's born.
+pub const CELL_HUE_YOUNG_DEG: f32 = 120.0; // green
+/// Hue of the oldest cell currently alive, relative to the rest of the live
+/// population (see `AGE_COLOR_REFRESH_INTERVAL_MS`) - not an absolute age
+/// threshold. Also the fallback for any `Universe` impl that doesn't track
+/// age: `age_bounds()` defaulting to `(0, 0)` collapses every cell to the
+/// young hue, so this only matters once age tracking is wired up.
+pub const CELL_HUE_OLD_DEG: f32 = 0.0; // red
+pub const CELL_SATURATION: f32 = 0.65;
+pub const CELL_LIGHTNESS: f32 = 0.55;
 
 // --- Simulation history / zoom ---
 /// Number of past generations kept for step-back, capped so memory use
@@ -41,6 +55,14 @@ pub const PAN_SPEED_PX_PER_SEC: f64 = 600.0;
 /// changes that should feel instant (e.g. pause/run) bypass this throttle -
 /// see `App::update_hud` in main.rs.
 pub const HUD_UPDATE_INTERVAL_MS: f64 = 100.0;
+
+// --- Cell age coloring ---
+/// How often (wall-clock ms) the renderer recomputes the live population's
+/// (min, max) age and does a full repaint against it. Deliberately
+/// decoupled from tick rate (which can run from well under 1/s to
+/// thousands/s) and from per-cell change detection, so aging never costs
+/// more than a periodic full redraw - the same cost class as a pan/zoom.
+pub const AGE_COLOR_REFRESH_INTERVAL_MS: f64 = 400.0;
 
 // --- DOM ---
 pub const CANVAS_ELEMENT_ID: &str = "canvas";

@@ -9,4 +9,13 @@ pub trait Universe {
     fn step_back(&mut self);
     fn is_replaying(&self) -> bool;
     fn generation(&self) -> u64;
+
+    fn age_of(&self, cell: &Cell) -> u32 {
+        let _ = cell;
+        0
+    }
+
+    fn age_bounds(&self) -> (u32, u32) {
+        (0, 0)
+    }
 }

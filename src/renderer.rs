@@ -1,14 +1,48 @@
 use crate::camera::Camera;
-use crate::config::{BG_COLOR, CELL_COLOR, GRID_COLOR};
+use crate::config::{
+    AGE_COLOR_REFRESH_INTERVAL_MS, BG_COLOR, CELL_HUE_OLD_DEG, CELL_HUE_YOUNG_DEG, CELL_LIGHTNESS,
+    CELL_SATURATION, GRID_COLOR,
+};
 use crate::universe::{Cell, Universe};
 use rustc_hash::FxHashSet;
 use wasm_bindgen::Clamped;
 use web_sys::CanvasRenderingContext2d;
 use web_sys::ImageData;
 
-/// Precomputed screen-space geometry for a given camera/zoom, shared by both
-/// the full-redraw and incremental-redraw paths so they always agree on
-/// exactly where a given world cell lands on screen.
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> [u8; 3] {
+    if s <= 0.0 {
+        let v = (l * 255.0).round() as u8;
+        return [v, v, v];
+    }
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let h_prime = h.rem_euclid(360.0) / 60.0;
+    let x = c * (1.0 - (h_prime % 2.0 - 1.0).abs());
+    let (r1, g1, b1) = match h_prime as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = l - c / 2.0;
+    [
+        ((r1 + m) * 255.0).round() as u8,
+        ((g1 + m) * 255.0).round() as u8,
+        ((b1 + m) * 255.0).round() as u8,
+    ]
+}
+fn color_for_age(age: u32, bounds: (u32, u32)) -> [u8; 3] {
+    let (min_age, max_age) = bounds;
+    let t = if max_age <= min_age {
+        0.0
+    } else {
+        (age.saturating_sub(min_age) as f32 / (max_age - min_age) as f32).clamp(0.0, 1.0)
+    };
+    let hue = CELL_HUE_YOUNG_DEG + (CELL_HUE_OLD_DEG - CELL_HUE_YOUNG_DEG) * t;
+    hsl_to_rgb(hue, CELL_SATURATION, CELL_LIGHTNESS)
+}
+
 struct Geometry {
     width: u32,
     height: u32,
@@ -63,6 +97,8 @@ pub struct Renderer {
     prev_camera: (i32, i32),
     prev_scale: i32,
     initialized: bool,
+    age_bounds: (u32, u32),
+    last_age_refresh_time: f64,
 }
 
 impl Renderer {
@@ -74,6 +110,8 @@ impl Renderer {
             prev_camera: (0, 0),
             prev_scale: 0,
             initialized: false,
+            age_bounds: (0, 0),
+            last_age_refresh_time: f64::NEG_INFINITY,
         }
     }
 
@@ -83,6 +121,7 @@ impl Renderer {
         camera: &Camera,
         context: &CanvasRenderingContext2d,
         rgba: &mut [u8],
+        now: f64,
     ) {
         let geo = Geometry::new(camera, self.width, self.height);
         let camera_or_zoom_changed = !self.initialized
@@ -91,7 +130,10 @@ impl Renderer {
             || camera.scale() != self.prev_scale;
 
         if camera_or_zoom_changed {
-            self.full_redraw(&geo, universe, rgba);
+            self.age_bounds = universe.age_bounds();
+            self.last_age_refresh_time = now;
+
+            self.full_redraw(&geo, universe, self.age_bounds, rgba);
             self.prev_live_cells.clear();
             self.prev_live_cells
                 .extend(universe.live_cells().iter().copied());
@@ -104,12 +146,21 @@ impl Renderer {
                     .unwrap();
             context.put_image_data(&image_data, 0.0, 0.0).unwrap();
         }
+        let age_refresh_due = now - self.last_age_refresh_time >= AGE_COLOR_REFRESH_INTERVAL_MS;
+        if age_refresh_due {
+            self.age_bounds = universe.age_bounds();
+            self.last_age_refresh_time = now;
+        }
 
         let current = universe.live_cells();
+        let to_paint: Vec<Cell> = if age_refresh_due {
+            current.iter().copied().collect()
+        } else {
+            current.difference(&self.prev_live_cells).copied().collect()
+        };
         let died: Vec<Cell> = self.prev_live_cells.difference(current).copied().collect();
-        let born: Vec<Cell> = current.difference(&self.prev_live_cells).copied().collect();
 
-        if died.is_empty() && born.is_empty() {
+        if died.is_empty() && to_paint.is_empty() {
             return;
         }
 
@@ -120,8 +171,9 @@ impl Renderer {
             }
         }
 
-        for &(wx, wy) in &born {
-            if let Some(r) = self.paint_live(&geo, rgba, wx, wy) {
+        for &(wx, wy) in &to_paint {
+            let color = color_for_age(universe.age_of(&(wx, wy)), self.age_bounds);
+            if let Some(r) = self.paint_live(&geo, rgba, wx, wy, color) {
                 dirty = Some(union_rect(dirty, r))
             }
         }
@@ -130,9 +182,7 @@ impl Renderer {
             self.prev_live_cells.remove(&cell);
         }
 
-        for cell in born {
-            self.prev_live_cells.insert(cell);
-        }
+        self.prev_live_cells.extend(to_paint);
 
         let Some((start_x, start_y, end_x, end_y)) = dirty else {
             return;
@@ -154,7 +204,13 @@ impl Renderer {
             .unwrap();
     }
 
-    fn full_redraw(&self, geo: &Geometry, universe: &dyn Universe, rgba: &mut [u8]) {
+    fn full_redraw(
+        &self,
+        geo: &Geometry,
+        universe: &dyn Universe,
+        bounds: (u32, u32),
+        rgba: &mut [u8],
+    ) {
         let width = geo.width;
         let height = geo.height;
 
@@ -195,7 +251,8 @@ impl Renderer {
 
         // 2. Draw live cells on top
         for &(wx, wy) in universe.live_cells() {
-            self.paint_live(geo, rgba, wx, wy);
+            let color = color_for_age(universe.age_of(&(wx, wy)), bounds);
+            self.paint_live(geo, rgba, wx, wy, color);
         }
     }
 
@@ -239,6 +296,7 @@ impl Renderer {
         rgba: &mut [u8],
         wx: i32,
         wy: i32,
+        color: [u8; 3],
     ) -> Option<(u32, u32, u32, u32)> {
         let (sx, sy) = geo.cell_screen_pos(wx, wy);
         let (start_x, start_y, end_x, end_y) = clamp_rect(sx, sy, geo.ps, geo.width, geo.height)?;
@@ -246,9 +304,9 @@ impl Renderer {
         for y in start_y..end_y {
             for x in start_x..end_x {
                 let idx = (y * geo.width + x) as usize * 4;
-                rgba[idx] = CELL_COLOR[0];
-                rgba[idx + 1] = CELL_COLOR[1];
-                rgba[idx + 2] = CELL_COLOR[2];
+                rgba[idx] = color[0];
+                rgba[idx + 1] = color[1];
+                rgba[idx + 2] = color[2];
                 rgba[idx + 3] = 255;
             }
         }
@@ -390,5 +448,36 @@ mod tests {
 
         // (0,0) covers screen x [100,108); (2,0) covers [116,124).
         assert_eq!(dirty, Some((100, 50, 124, 58)));
+    }
+
+    // --- color_for_age (relative age-color gradient) ---
+
+    #[test]
+    fn color_for_age_no_spread_is_youngest_color() {
+        let youngest = hsl_to_rgb(CELL_HUE_YOUNG_DEG, CELL_SATURATION, CELL_LIGHTNESS);
+        assert_eq!(color_for_age(50, (0, 0)), youngest); // untracked default
+        assert_eq!(color_for_age(7, (7, 7)), youngest); // uniform population
+    }
+
+    #[test]
+    fn color_for_age_endpoints_match_palette() {
+        assert_eq!(
+            color_for_age(0, (0, 100)),
+            hsl_to_rgb(CELL_HUE_YOUNG_DEG, CELL_SATURATION, CELL_LIGHTNESS)
+        );
+        assert_eq!(
+            color_for_age(100, (0, 100)),
+            hsl_to_rgb(CELL_HUE_OLD_DEG, CELL_SATURATION, CELL_LIGHTNESS)
+        );
+    }
+
+    #[test]
+    fn color_for_age_is_relative_not_absolute() {
+        // Same absolute age (50), different population spreads - a young
+        // population and an old-skewing population should not necessarily
+        // agree on how "old" age 50 counts as.
+        let in_young_population = color_for_age(50, (0, 100));
+        let in_old_population = color_for_age(50, (40, 90));
+        assert_ne!(in_young_population, in_old_population);
     }
 }
